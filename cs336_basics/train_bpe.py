@@ -221,35 +221,51 @@ def bpe_merge(pre_tokens, vocab_size, special_tokens=None):
             vocab[next_token_id] = token_bytes
             next_token_id += 1
 
-    while len(vocab) < vocab_size and pair_counts:
-        # Convert counts to list once per iteration
-        items = list(pair_counts.items())
-        
-        # Find max count first (fast first pass)
-        max_count = max(count for _, count in items)
-        
-        # Then filter to pairs with max count and find lex greatest
-        candidates = [pair for pair, count in items if count == max_count]
-        best_pair = max(candidates, key=lambda p: (vocab[p[0]], vocab[p[1]]))
-        
-        if max_count == 0:
-            break
+    # Initialize progress bar
+    progress_bar = tqdm(
+        total=vocab_size - len(vocab),
+        desc="Building vocabulary",
+        unit="merge",
+        initial=0
+    )
+    
+    try:
+        while len(vocab) < vocab_size and pair_counts:
+            # Convert counts to list once per iteration
+            items = list(pair_counts.items())
+            
+            # Find max count first (fast first pass)
+            max_count = max(count for _, count in items)
+            
+            # Then filter to pairs with max count and find lex greatest
+            candidates = [pair for pair, count in items if count == max_count]
+            best_pair = max(candidates, key=lambda p: (vocab[p[0]], vocab[p[1]]))
+            
+            if max_count == 0:
+                break
 
-        # Create new token
-        new_token_bytes = vocab[best_pair[0]] + vocab[best_pair[1]]
-        if new_token_bytes not in vocab.values():
-            vocab[next_token_id] = new_token_bytes
-            merges.append((vocab[best_pair[0]], vocab[best_pair[1]]))
-            next_token_id += 1
+            # Create new token
+            new_token_bytes = vocab[best_pair[0]] + vocab[best_pair[1]]
+            if new_token_bytes not in vocab.values():
+                vocab[next_token_id] = new_token_bytes
+                merges.append((vocab[best_pair[0]], vocab[best_pair[1]]))
+                next_token_id += 1
+                progress_bar.update(1)  # Update progress bar
 
-        # Update tokens
-        int_tokens = update_int_tokens(
-            int_tokens, 
-            pair_counts, 
-            pair_occurrences, 
-            best_pair,
-            next_token_id - 1
-        )
+            # Update tokens
+            int_tokens = update_int_tokens(
+                int_tokens, 
+                pair_counts, 
+                pair_occurrences, 
+                best_pair,
+                next_token_id - 1
+            )
+            
+            # Update progress bar description with current vocab size
+            progress_bar.set_description(f"Building vocabulary (size: {len(vocab)})")
+            
+    finally:
+        progress_bar.close()  # Ensure progress bar is closed even if interrupted
 
     return vocab, merges
 

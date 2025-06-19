@@ -236,26 +236,6 @@ def bpe_merge(pre_tokens, vocab_size, special_tokens=None):
     return vocab, merges
 
 
-def initialize_pair_counts(tokens: List[List[int]]):
-    """
-    Build initial pair_counts and pair_occurrences for a list of tokens.
-    Each token is a list of integer IDs.
-    Returns:
-        pair_counts: Counter mapping (int1, int2) -> count of occurrences.
-        pair_occurrences: dict mapping (int1, int2) -> set of (token_idx)
-    """
-    pair_counts = Counter()
-    pair_occurrences = defaultdict(set)
-
-    for tidx, token in enumerate(tokens):
-        for i in range(len(token) - 1):
-            pair = (token[i], token[i + 1])
-            pair_counts[pair] += 1
-            pair_occurrences[pair].add(tidx)
-
-    return pair_counts, pair_occurrences
-
-
 def train_bpe_tokenizer(
         input_path: str,
         vocab_size: int,

@@ -1,3 +1,7 @@
+# This implementation used bytes objects to represent tokens,
+# which is not efficient for memory usage.
+
+
 import os
 import regex as re
 import multiprocessing
@@ -7,6 +11,9 @@ from typing import BinaryIO
 from collections import Counter, defaultdict
 from typing import List, Tuple, Dict, Set
 from tqdm import tqdm
+
+import cProfile
+import pstats
 
 # https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py#L12
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -106,22 +113,20 @@ def parallel_pretokenize(filename, num_processes, boundaries):
     return all_pre_tokens  # Return the combined list of pre-tokens
 
 
-def update_int_tokens(
-        tokens: List[List[int]],
+def update_byte_tokens(
+        tokens: List[List[bytes]],
         pair_counts: Counter,
-        pair_occurrences: Dict[Tuple[int, int], set],
-        merge_pair: Tuple[int, int],
-        new_token_id: int
-    ) -> List[List[int]]:
+        pair_occurrences: Dict[Tuple[bytes, bytes], set],
+        merge_pair: Tuple[bytes, bytes]
+    ) -> List[List[bytes]]:
     """
-    Update the tokens and statistics after merging a pair of integers.
+    Update the tokens and statistics after merging a pair of bytes.
     
     Args:
-        tokens: List of tokens, each token being a list of integer IDs
-        pair_counts: Counter of integer pair frequencies
+        tokens: List of tokens, each token being a list of bytes
+        pair_counts: Counter of byte pair frequencies
         pair_occurrences: Dictionary mapping pairs to their locations
-        merge_pair: The pair (int1, int2) being merged
-        new_token_id: The new ID to use for the merged pair
+        merge_pair: The pair (byte1, byte2) being merged
     
     Returns:
         The updated tokens (though they're modified in-place)
@@ -131,6 +136,8 @@ def update_int_tokens(
     if not occurrences:
         return tokens
     
+    merged_byte = merge_pair[0] + merge_pair[1]
+
     for token_idx in occurrences:
         token = tokens[token_idx]
         i = 0
@@ -151,19 +158,19 @@ def update_int_tokens(
                         del pair_counts[right_pair]
                         del pair_occurrences[right_pair]
 
-                # Replace the pair with the new token ID
-                token[i:i + 2] = [new_token_id]  # In-place replacement
+                # Replace the pair with the merged byte
+                token[i:i + 2] = [merged_byte]  # In-place replacement
                 # No need to increment i here, because the current i now has a new merged token
             else:
                 i += 1
 
         i = 0
         while i < len(token):
-            if i > 0 and token[i] == new_token_id:
+            if i > 0 and token[i] == merged_byte:
                 new_left_pair = (token[i - 1], token[i])
                 pair_counts[new_left_pair] += 1
                 pair_occurrences[new_left_pair].add(token_idx)
-            if i < len(token) - 1 and token[i] == new_token_id:
+            if i < len(token) - 1 and token[i] == merged_byte:
                 new_right_pair = (token[i], token[i + 1])
                 pair_counts[new_right_pair] += 1
                 pair_occurrences[new_right_pair].add(token_idx)
@@ -176,13 +183,13 @@ def update_int_tokens(
     return tokens
 
 
-def initialize_pair_counts(tokens: List[List[int]]):
+def initialize_pair_counts(tokens: List[List[bytes]]):
     """
     Build initial pair_counts and pair_occurrences for a list of tokens.
-    Each token is a list of integer IDs.
+    Each token is a list of bytes (as single-byte bytes or merged byte chunks).
     Returns:
-        pair_counts: Counter mapping (int1, int2) -> count of occurrences.
-        pair_occurrences: dict mapping (int1, int2) -> set of (token_idx)
+        pair_counts: Counter mapping (byte1, byte2) -> count of occurrences.
+        pair_occurrences: dict mapping (byte1, byte2) -> set of (token_idx)
     """
     pair_counts = Counter()
     pair_occurrences = defaultdict(set)
@@ -197,16 +204,15 @@ def initialize_pair_counts(tokens: List[List[int]]):
 
 
 def bpe_merge(pre_tokens, vocab_size, special_tokens=None):
-    # Create mapping from single bytes to their integer IDs (0-255)
-    byte_to_id = {bytes([i]): i for i in range(256)}
-    
-    # Convert pre_tokens to integer tokens (0-255)
-    int_tokens: List[List[int]] = [
-        [byte_to_id[bytes([b])] for b in token.encode("utf-8")]
+    # Convert pre_tokens to byte tokens
+    # byte_tokens = [list(token.encode("utf-8")) for token in pre_tokens]
+    # byte_tokens = [[bytes([b]) for b in token] for token in byte_tokens]    # List[List[bytes]]
+    byte_tokens: List[List[bytes]] = [
+        [bytes([b]) for b in token.encode("utf-8")]
         for token in pre_tokens
     ]
 
-    pair_counts, pair_occurrences = initialize_pair_counts(int_tokens)
+    pair_counts, pair_occurrences = initialize_pair_counts(byte_tokens)
 
     vocab: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}
     next_token_id = 256
@@ -222,34 +228,19 @@ def bpe_merge(pre_tokens, vocab_size, special_tokens=None):
             next_token_id += 1
 
     while len(vocab) < vocab_size and pair_counts:
-        # Convert counts to list once per iteration
-        items = list(pair_counts.items())
-        
-        # Find max count first (fast first pass)
-        max_count = max(count for _, count in items)
-        
-        # Then filter to pairs with max count and find lex greatest
-        candidates = [pair for pair, count in items if count == max_count]
-        best_pair = max(candidates, key=lambda p: (vocab[p[0]], vocab[p[1]]))
-        
-        if max_count == 0:
+        best_pair, best_count = max(pair_counts.items(), key=lambda item: (item[1], item[0]))
+        if best_count == 0:
             break
 
-        # Create new token
-        new_token_bytes = vocab[best_pair[0]] + vocab[best_pair[1]]
-        if new_token_bytes not in vocab.values():
-            vocab[next_token_id] = new_token_bytes
-            merges.append((vocab[best_pair[0]], vocab[best_pair[1]]))
+        # Create a new token from the best pair
+        new_token = b"".join(best_pair)
+        if new_token not in vocab.values():
+            vocab[next_token_id] = new_token
+            merges.append(best_pair)
             next_token_id += 1
 
-        # Update tokens
-        int_tokens = update_int_tokens(
-            int_tokens, 
-            pair_counts, 
-            pair_occurrences, 
-            best_pair,
-            next_token_id - 1
-        )
+        # Update byte_tokens with the new token
+        byte_tokens = update_byte_tokens(byte_tokens, pair_counts, pair_occurrences, best_pair)        
 
     return vocab, merges
 
@@ -306,3 +297,11 @@ if __name__ == "__main__":
             
     with open(merges_path, 'wb') as f:
         pickle.dump(tokenizer_params.merges, f)
+
+
+
+    # with open(vocab_path, 'rb') as f:
+    #     vocab = pickle.load(f)
+        
+    # with open(merges_path, 'rb') as f:
+    #     merges = pickle.load(f)

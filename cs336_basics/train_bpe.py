@@ -187,7 +187,8 @@ def initialize_pair_counts(tokens: List[List[int]]):
     pair_counts = Counter()
     pair_occurrences = defaultdict(set)
 
-    for tidx, token in enumerate(tokens):
+    # tqdm progress bar for initializing pair counts
+    for tidx, token in tqdm(list(enumerate(tokens)), desc="Initializing pair counts", unit="token"):
         for i in range(len(token) - 1):
             pair = (token[i], token[i + 1])
             pair_counts[pair] += 1

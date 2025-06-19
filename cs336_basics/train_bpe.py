@@ -301,9 +301,3 @@ if __name__ == "__main__":
         
     # with open(merges_path, 'rb') as f:
     #     merges = pickle.load(f)
-
-    # print("Vocabulary:")
-    # print(vocab)
-
-    # print("\nMerges:")
-    # print(merges)

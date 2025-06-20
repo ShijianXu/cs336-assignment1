@@ -308,18 +308,30 @@ if __name__ == "__main__":
     vocab_path = "../data/vocab_tinystories.pkl"
     merges_path = "../data/merges_tinystories.pkl"
     
-    vocab_size = 10000
+    # vocab_size = 10000
     special_tokens = ["<|endoftext|>"]
 
-    tokenizer_params = train_bpe_tokenizer(
-        input_path=filename,
-        vocab_size=vocab_size,
-        special_tokens=special_tokens
-    )
+    # tokenizer_params = train_bpe_tokenizer(
+    #     input_path=filename,
+    #     vocab_size=vocab_size,
+    #     special_tokens=special_tokens
+    # )
     
     # serialize the tokenizer params
-    with open(vocab_path, 'wb') as f:
-        pickle.dump(tokenizer_params.vocab, f)
+    # with open(vocab_path, 'wb') as f:
+    #     pickle.dump(tokenizer_params.vocab, f)
             
-    with open(merges_path, 'wb') as f:
-        pickle.dump(tokenizer_params.merges, f)
+    # with open(merges_path, 'wb') as f:
+    #     pickle.dump(tokenizer_params.merges, f)
+
+    # read in the tokenizer params
+    with open(vocab_path, 'rb') as f:
+        vocab = pickle.load(f)
+    
+    with open(merges_path, 'rb') as f:
+        merges = pickle.load(f)
+
+    print("Vocabulary size:", len(vocab))
+    print("Number of merges:", len(merges))
+    print("Sample vocabulary:", list(vocab.items())[:10])
+    print("Sample merges:", merges[:10]) 

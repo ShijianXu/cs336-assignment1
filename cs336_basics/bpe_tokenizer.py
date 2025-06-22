@@ -27,10 +27,14 @@ class BPE_Tokenizer:
 
         # print(f"Pre-tokens: {pre_tokens}")
 
-        byte_tokens: List[List[bytes]] = [
-            [bytes([b]) for b in token.encode("utf-8")]
-            for token in pre_tokens
-        ]
+        byte_tokens: List[List[bytes]] = []
+        for token in pre_tokens:
+            if token in self.special_tokens:
+                byte_tokens.append([token])  # add the raw special token into the list
+            else:
+                byte_tokens.append([bytes([b]) for b in token.encode("utf-8")])
+
+        # print(f"Byte tokens before merging: {byte_tokens}")
         encoded_ids = self.apply_merges(byte_tokens)
         return encoded_ids
 
@@ -53,6 +57,9 @@ class BPE_Tokenizer:
         # Apply BPE merges to the byte tokens in the order specified in the merges
         for a, b in self.merges:
             for token_list in byte_tokens:
+                if len(token_list) == 1 and token_list[0] in self.special_tokens:
+                    # Skip special tokens
+                    continue
                 i = 0
                 write = 0 # write pointer for in-place modification
                 while i < len(token_list):
@@ -75,6 +82,10 @@ class BPE_Tokenizer:
         encoded_ids = []
         for token_list in byte_tokens:
             for token in token_list:
+                # Encode special token first, then check in vocab
+                if token in self.special_tokens:
+                    token = token.encode("utf-8")  # Convert special tokens to bytes
+
                 if token in self.vocab_dict:
                     encoded_ids.append(self.vocab_dict[token])
                 else:

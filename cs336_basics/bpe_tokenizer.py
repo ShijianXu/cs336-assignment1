@@ -61,7 +61,11 @@ class BPE_Tokenizer:
         return encoded_ids
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        pass
+        for chunk in iterable:
+            # For each chunk (line, paragraph, etc.)
+            ids = self.encode(chunk)
+            for id_ in ids:
+                yield id_
 
     def decode(self, ids: List[int]) -> str:
         # Convert IDs back to tokens

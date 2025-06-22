@@ -27,8 +27,30 @@ class BPE_Tokenizer:
 
         # print(f"Pre-tokens: {pre_tokens}")
 
+        # Merge consecutive special tokens if their concatenation is a special token
+        merged_tokens = []
+        i = 0
+        while i < len(pre_tokens):
+            token = pre_tokens[i]
+            if token in self.special_tokens:
+                j = i + 1
+                merged = token
+                # Keep adding while the concatenation is a valid special token
+                while j < len(pre_tokens) and pre_tokens[j] in self.special_tokens:
+                    candidate = merged + pre_tokens[j]
+                    if candidate in self.special_tokens:
+                        merged = candidate
+                        j += 1
+                    else:
+                        break
+                merged_tokens.append(merged)
+                i = j
+            else:
+                merged_tokens.append(token)
+                i += 1
+
         byte_tokens: List[List[bytes]] = []
-        for token in pre_tokens:
+        for token in merged_tokens:
             if token in self.special_tokens:
                 byte_tokens.append([token])  # add the raw special token into the list
             else:
@@ -114,11 +136,11 @@ if __name__ == "__main__":
     
     vocab_path = "../data/vocab_tinystories.pkl"
     merges_path = "../data/merges_tinystories.pkl"
-    special_tokens = ["<|endoftext|>"]
+    special_tokens=["<|endoftext|>"]
 
     tokenizer = BPE_Tokenizer.from_file(vocab_path, merges_path, special_tokens)
 
-    text = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
+    text = "Hello, how <|endoftext|><|endoftext|> are you?<|endoftext|>"
     encoded = tokenizer.encode(text)
     print(f"Encoded: {encoded}")
     decoded = tokenizer.decode(encoded)

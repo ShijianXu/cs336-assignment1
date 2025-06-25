@@ -55,3 +55,39 @@ class RMSNorm(nn.Module):
         result = self.gains * (x / norm)
 
         return result.to(in_dype)
+    
+
+# class SiLU(nn.Module):
+#     def __init__(self):
+#         super(SiLU, self).__init__()
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         return x * torch.sigmoid(x)
+    
+
+def SiLU(x: torch.Tensor) -> torch.Tensor:
+    return x * torch.sigmoid(x)
+
+
+class SwiGLU(nn.Module):
+    def __init__(self, d_model: int, d_ff: int, device=None, dtype=None):
+        super(SwiGLU, self).__init__()
+        self.w1 = nn.Parameter(torch.empty((d_ff, d_model), device=device, dtype=dtype))
+        self.w2 = nn.Parameter(torch.empty((d_model, d_ff), device=device, dtype=dtype))
+        self.w3 = nn.Parameter(torch.empty((d_ff, d_model), device=device, dtype=dtype))
+
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        nn.init.xavier_uniform_(self.w1)
+        nn.init.xavier_uniform_(self.w2)
+        nn.init.xavier_uniform_(self.w3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (batch_size, seq_len, d_model)
+        x1 = x @ self.w1.t()
+        x3 = x @ self.w3.t()
+        x2 = SiLU(x1) * x3
+        out = x2 @ self.w2.t()
+        return out
+

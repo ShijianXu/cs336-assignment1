@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from einops import rearrange
 
 
 class Linear(nn.Module):
@@ -72,6 +72,10 @@ def SiLU(x: torch.Tensor) -> torch.Tensor:
 class SwiGLU(nn.Module):
     def __init__(self, d_model: int, d_ff: int, device=None, dtype=None):
         super(SwiGLU, self).__init__()
+
+        # d_ff = 8/3 * d_model is a common choice, also d_ff should be a multiple of 64 for efficient computation
+        assert d_ff % 64 == 0, "d_ff must be a multiple of 64 for SwiGLU."
+
         self.w1 = nn.Parameter(torch.empty((d_ff, d_model), device=device, dtype=dtype))
         self.w2 = nn.Parameter(torch.empty((d_model, d_ff), device=device, dtype=dtype))
         self.w3 = nn.Parameter(torch.empty((d_ff, d_model), device=device, dtype=dtype))
@@ -91,3 +95,50 @@ class SwiGLU(nn.Module):
         out = x2 @ self.w2.t()
         return out
 
+
+class RotaryPositionalEmbedding(nn.Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+        super(RotaryPositionalEmbedding, self).__init__()
+        assert d_k % 2 == 0, "d_k must be even for Rotary Positional Embedding."
+
+        self.theta = theta
+        self.d_k = d_k
+        self.max_seq_len = max_seq_len
+
+        inv_freq = 1.0 / (theta ** (torch.arange(0, d_k, 2, device=device).float() / d_k))
+        position = torch.arange(0, max_seq_len, device=device).float()
+
+        sinusoid_inp = torch.outer(position, inv_freq)                  # shape: [max_seq_len, d_k//2]
+
+        self.register_buffer('sin', torch.sin(sinusoid_inp), persistent=False)
+        self.register_buffer('cos', torch.cos(sinusoid_inp), persistent=False)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        # Get sin and cos values via advanced indexing
+        sin = self.sin[token_positions]  # shape: [..., seq_len, d_k//2]
+        cos = self.cos[token_positions]  # shape: [..., seq_len, d_k//2]
+
+        # Split x into even/odd parts
+        x_even = x[..., 0::2]  # [..., seq_len, d_k//2]
+        x_odd  = x[..., 1::2]
+
+        # Apply rotation
+        x_rotated_even = x_even * cos - x_odd * sin
+        x_rotated_odd  = x_even * sin + x_odd * cos
+
+        # Interleave even and odd
+        x_out = torch.empty_like(x)
+        x_out[..., 0::2] = x_rotated_even
+        x_out[..., 1::2] = x_rotated_odd
+
+        return x_out
+    
+
+
+if __name__ == "__main__":
+    m = RotaryPositionalEmbedding(theta=10000, d_k=64, max_seq_len=512, device='cpu')
+    x = torch.randn(2, 10, 64)  # [B, S, d_k]
+    token_positions = torch.arange(10).unsqueeze(0).repeat(2, 1)  # [B, S]
+    out = m(x, token_positions)
+    print(out.shape)  # Should be [2, 10, 64]
+    print(out.dtype, out.device)

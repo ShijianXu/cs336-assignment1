@@ -57,16 +57,16 @@ class RMSNorm(nn.Module):
         return result.to(in_dype)
     
 
-# class SiLU(nn.Module):
-#     def __init__(self):
-#         super(SiLU, self).__init__()
+class SiLU(nn.Module):
+    def __init__(self):
+        super(SiLU, self).__init__()
 
-#     def forward(self, x: torch.Tensor) -> torch.Tensor:
-#         return x * torch.sigmoid(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.sigmoid(x)
     
 
-def SiLU(x: torch.Tensor) -> torch.Tensor:
-    return x * torch.sigmoid(x)
+# def SiLU(x: torch.Tensor) -> torch.Tensor:
+#     return x * torch.sigmoid(x)
 
 
 class SwiGLU(nn.Module):
@@ -80,6 +80,8 @@ class SwiGLU(nn.Module):
         self.w2 = nn.Parameter(torch.empty((d_model, d_ff), device=device, dtype=dtype))
         self.w3 = nn.Parameter(torch.empty((d_ff, d_model), device=device, dtype=dtype))
 
+        self.silu = SiLU()
+
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -91,7 +93,7 @@ class SwiGLU(nn.Module):
         # x: (batch_size, seq_len, d_model)
         x1 = x @ self.w1.t()
         x3 = x @ self.w3.t()
-        x2 = SiLU(x1) * x3
+        x2 = self.silu(x1) * x3
         out = x2 @ self.w2.t()
         return out
 
@@ -110,13 +112,15 @@ class RotaryPositionalEmbedding(nn.Module):
 
         sinusoid_inp = torch.outer(position, inv_freq)                  # shape: [max_seq_len, d_k//2]
 
-        self.register_buffer('sin', torch.sin(sinusoid_inp), persistent=False)
-        self.register_buffer('cos', torch.cos(sinusoid_inp), persistent=False)
+        self.register_buffer('sin', torch.sin(sinusoid_inp), persistent=False)  # shape: [max_seq_len, d_k//2]
+        self.register_buffer('cos', torch.cos(sinusoid_inp), persistent=False)  # shape: [max_seq_len, d_k//2]
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         # Get sin and cos values via advanced indexing
-        sin = self.sin[token_positions]  # shape: [..., seq_len, d_k//2]
-        cos = self.cos[token_positions]  # shape: [..., seq_len, d_k//2]
+        # x: (..., seq_len, d_k)
+        # token_positions: (..., seq_len)
+        sin = self.sin[token_positions]  # shape: [seq_len, d_k//2]
+        cos = self.cos[token_positions]  # shape: [seq_len, d_k//2]
 
         # Split x into even/odd parts
         x_even = x[..., 0::2]  # [..., seq_len, d_k//2]
@@ -134,11 +138,21 @@ class RotaryPositionalEmbedding(nn.Module):
         return x_out
     
 
+class Softmax(nn.Module):
+    def __init__(self, dim: int = -1):
+        super(Softmax, self).__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor, i: int) -> torch.Tensor:
+        return torch.softmax(x, dim=self.dim)
+
+
 
 if __name__ == "__main__":
-    m = RotaryPositionalEmbedding(theta=10000, d_k=64, max_seq_len=512, device='cpu')
-    x = torch.randn(2, 10, 64)  # [B, S, d_k]
-    token_positions = torch.arange(10).unsqueeze(0).repeat(2, 1)  # [B, S]
+    device = 'cuda'
+    m = RotaryPositionalEmbedding(theta=10000, d_k=64, max_seq_len=512, device='cuda')
+    x = torch.randn(2, 10, 64, device=device)  # [B, S, d_k]
+    token_positions = torch.arange(10, device=device).unsqueeze(0).repeat(2, 1)  # [B, S]
     out = m(x, token_positions)
     print(out.shape)  # Should be [2, 10, 64]
     print(out.dtype, out.device)

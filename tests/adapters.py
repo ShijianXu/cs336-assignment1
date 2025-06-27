@@ -11,7 +11,7 @@ from torch import Tensor
 
 from cs336_basics.train_bpe import train_bpe_tokenizer
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.modules import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding
+from cs336_basics.modules import Linear, Embedding, RMSNorm, SiLU, SwiGLU, RotaryPositionalEmbedding
 
 def run_linear(
     d_in: int,
@@ -412,7 +412,8 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    m = SiLU()
+    return m(in_features)
 
 
 def run_get_batch(

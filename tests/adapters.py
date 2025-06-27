@@ -11,7 +11,7 @@ from torch import Tensor
 
 from cs336_basics.train_bpe import train_bpe_tokenizer
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.modules import Linear, Embedding, RMSNorm, SiLU, SwiGLU, RotaryPositionalEmbedding
+from cs336_basics.modules import Linear, Embedding, RMSNorm, SiLU, SwiGLU, RotaryPositionalEmbedding, Softmax
 
 def run_linear(
     d_in: int,
@@ -452,7 +452,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    m = Softmax(dim=dim)
+    return m(in_features)
 
 
 def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]) -> Float[Tensor, ""]:

@@ -143,9 +143,12 @@ class Softmax(nn.Module):
         super(Softmax, self).__init__()
         self.dim = dim
 
-    def forward(self, x: torch.Tensor, i: int) -> torch.Tensor:
-        return torch.softmax(x, dim=self.dim)
-
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # subtract max for numerical stability
+        x_max = x.max(dim=self.dim, keepdim=True).values
+        x_exp = torch.exp(x - x_max)
+        x_sum = x_exp.sum(dim=self.dim, keepdim=True)
+        return x_exp / x_sum
 
 
 if __name__ == "__main__":
